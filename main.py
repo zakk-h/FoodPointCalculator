@@ -77,19 +77,19 @@ else:
     days_elapsed = (datetime.now().date() - start_date).days
     total_days = (end_date - start_date).days
     days_remaining = (end_date - datetime.now().date()).days
-
+    
     # Calculate points used and needed per day
     points_used = starting_points - current_points
-    points_per_day_needed = points_used / days_elapsed if days_elapsed > 0 else 0
+    points_per_day_used = points_used / days_elapsed if days_elapsed > 0 else 0
     points_per_day_total = starting_points / total_days if total_days > 0 else 0
     points_per_day_from_now = current_points / days_remaining if days_remaining > 0 else 0
-    projected_usage = points_per_day_needed * total_days
-    over_under = starting_points - projected_usage
+    over_under = current_points - days_remaining*points_per_day_used
 
     # Display the results
     st.write(f"Days elapsed: {days_elapsed}")
     st.write(f"Total days in term: {total_days}")
     st.write(f"Points used so far: {points_used}")
-    st.write(f"Average points used per day: {points_per_day_needed:.2f}")
+    st.write(f"Average points used per day: {points_per_day_used:.2f}")
     st.write(f"Allowed points to spent per day from now on: {points_per_day_from_now:.2f}")
-    st.write(f"Projected points over/under if current trajectory continues: {over_under:.2f}")
+    st.write(f"Food points remaining if current trajectory continues: {over_under:.2f}")
+
