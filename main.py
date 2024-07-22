@@ -13,6 +13,9 @@ dining_plans = {
     "Plan E": 4267,
     "Plan F": 900,
     "Plan J": 1943,
+    "Summer S": 798,
+    "Summer M": 1119,
+    "Summer L": 1478,
     "Custom": None
 }
 
