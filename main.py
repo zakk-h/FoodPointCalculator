@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import pandas as pd
+from datetime import timedelta
 
 # Define the dining plans
 dining_plans = {
@@ -20,46 +21,81 @@ dining_plans = {
     "Custom": None
 }
 
-# Function to scrape the Duke academic calendar and determine the current term
+from datetime import timedelta
+
+# Function to scrape the Duke academic calendar and determine the current term or the next term if in break
 def get_term_dates():
     url = "https://registrar.duke.edu/2024-2025-academic-calendar/"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # Ensure the request was successful
-        soup = BeautifulSoup(response.text, 'html.parser')
+    
+    def find_terms():
+        try:
+            response = requests.get(url)
+            response.raise_for_status()  # Ensure the request was successful
+            soup = BeautifulSoup(response.text, 'html.parser')
 
+            current_date = datetime.now()
+            terms = []
+
+            # Parse the calendar to find all term start and end dates
+            tables = soup.find_all('table')
+            term_start_date = None
+            term_end_date = None
+
+            for table in tables:
+                rows = table.find_all('tr')
+                for row in rows:
+                    columns = row.find_all('td')
+                    if columns and len(columns) >= 3:
+                        date_text = columns[0].text.strip().split('–')[0].strip()
+                        event = columns[2].text.strip().lower()
+
+                        # Determine the correct year for the date
+                        try:
+                            month_day = datetime.strptime(date_text, '%B %d')
+                            year = current_date.year if month_day.month >= current_date.month else current_date.year + 1
+                            date = datetime.strptime(f"{date_text}, {year}", '%B %d, %Y')
+                        except ValueError:
+                            continue  # Skip rows that don't match the expected date format
+
+                        # Record term start date
+                        if 'classes begin' in event:
+                            term_start_date = date
+
+                        # Record term end date and store the term
+                        if 'final examinations end' in event and term_start_date:
+                            term_end_date = date
+                            terms.append((term_start_date, term_end_date))
+                            term_start_date = None  # Reset for the next term
+
+            return terms
+        except requests.RequestException as e:
+            st.error(f"Error fetching the academic calendar: {e}")
+            return []
+
+    def select_current_or_next_term(terms):
         current_date = datetime.now()
-        term_start_date = None
-        term_end_date = None
+        
+        for start, end in terms:
+            if start <= current_date <= end:
+                return start, end
+        
+        # If no current term is found, find the next upcoming term
+        future_terms = [term for term in terms if term[0] > current_date]
+        if future_terms:
+            return min(future_terms, key=lambda term: term[0])
 
-        # Find the term that includes today's date
-        tables = soup.find_all('table')
-        for table in tables:
-            rows = table.find_all('tr')
-            for row in rows:
-                columns = row.find_all('td')
-                if columns and len(columns) >= 3:
-                    date_text = columns[0].text.strip().split('–')[0].strip()
-                    event = columns[2].text.strip().lower()
-
-                    # Determine the correct year for the date
-                    try:
-                        month_day = datetime.strptime(date_text, '%B %d')
-                        year = current_date.year if month_day.month >= current_date.month else current_date.year + 1
-                        date = datetime.strptime(f"{date_text}, {year}", '%B %d, %Y')
-                    except ValueError:
-                        continue  # Skip rows that don't match the expected date format
-
-                    if 'classes begin' in event and date <= current_date:
-                        term_start_date = date
-
-                    if 'final examinations end' in event and term_start_date and not term_end_date:
-                        term_end_date = date
-
-        return term_start_date, term_end_date
-    except requests.RequestException as e:
-        st.error(f"Error fetching the academic calendar: {e}")
         return None, None
+
+    # Find all terms and select the current or next term
+    terms = find_terms()
+    term_start_date, term_end_date = select_current_or_next_term(terms)
+    
+    if term_start_date is None or term_end_date is None:
+        # If no term is found, initialize with a placeholder
+        return datetime.now(), datetime.now(), 0
+
+    days_elapsed = (datetime.now() - term_start_date).days
+    return term_start_date, term_end_date, days_elapsed
 
 # Function to log data
 def log_data(term_start_date, term_end_date, start_date, end_date, starting_points, current_points):
@@ -84,7 +120,7 @@ def log_data(term_start_date, term_end_date, start_date, end_date, starting_poin
     df.to_csv("food_points_log.csv", index=False)
 
 # Get term dates
-term_start_date, term_end_date = get_term_dates()
+term_start_date, term_end_date, days_elapsed = get_term_dates()
 
 # Streamlit UI
 st.title("Food Point Calculator")
@@ -103,7 +139,7 @@ else:
         starting_points = st.number_input("Starting Food Points", value=dining_plans[plan_selected] if dining_plans[plan_selected] is not None else 0, min_value=0)
         
         if 'current_points' not in st.session_state:
-            st.session_state.current_points = 0
+            st.session_state.current_points = starting_points
 
         def log_current_points():
             current_points = st.session_state.current_points
@@ -115,6 +151,7 @@ else:
         days_elapsed = (datetime.now().date() - start_date).days
         total_days = (end_date - start_date).days
         days_remaining = (end_date - datetime.now().date()).days
+        #days_remaining = total_days - days_elapsed
 
         # Calculate points used and needed per day
         points_used = starting_points - st.session_state.current_points
@@ -126,7 +163,11 @@ else:
         # Display the results
         st.write(f"Days elapsed: {days_elapsed}")
         st.write(f"Total days in term: {total_days}")
-        st.write(f"Points used so far: {points_used}")
-        st.write(f"Average points used per day: {points_per_day_used:.2f}")
-        st.write(f"Allowed points to spend per day from now on: {points_per_day_from_now:.2f}")
-        st.write(f"Food points remaining if current trajectory continues: {over_under:.2f}")
+        if days_elapsed < 0: 
+            st.write(f"You are able to spend {starting_points/total_days:.2f} food points per day once the term begins.")
+            st.write(f"Additional statistics on food points and current trajectory will appear after the term begins on {start_date}.")
+        else:
+            st.write(f"Points used so far: {points_used}")
+            st.write(f"Average points used per day: {points_per_day_used:.2f}")
+            st.write(f"Allowed points to spend per day from now on: {points_per_day_from_now:.2f}")
+            st.write(f"Food points remaining if current trajectory continues: {over_under:.2f}")
