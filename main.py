@@ -1,6 +1,23 @@
 import streamlit as st
 from datetime import datetime, timedelta
 import pandas as pd
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+# Define the scope of access
+scope = ["https://spreadsheets.google.com/feeds", 
+         "https://www.googleapis.com/auth/drive"]
+
+# Read credentials from the secrets.toml file
+creds_dict = st.secrets["google_credentials"]
+
+# Authenticate using the credentials from the secrets
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+client = gspread.authorize(creds)
+
+# Open the Google Sheet by its URL
+spreadsheet_url = "https://docs.google.com/spreadsheets/d/16uDILn_5phMRGMWVqTd6fnNf2q6XsZrnE7xQSZjnalY/edit?usp=sharing"
+sheet = client.open_by_url(spreadsheet_url).sheet1
 
 # Define the dining plans
 dining_plans = {
@@ -83,6 +100,9 @@ def calculate_days_remaining(end_date, start_date, break_selection, current_date
     
     return days_remaining, adjusted_days_elapsed
 
+def log_to_google_sheets(data):
+    # Append the data to the spreadsheet
+    sheet.append_row(data)
 
 # Get term dates
 term_start_date, term_end_date, days_elapsed, term_name, breaks = get_term_dates()
@@ -144,6 +164,17 @@ else:
             st.write(f"You are able to spend {starting_points / days_present:.2f} food points per day once the term begins.")
             st.write(f"Additional statistics on food points and current trajectory will appear after the term begins on {start_date}.")
         else:
+            # Log data to Google Sheets
+            break_data = [days_included for _, _, _, days_included in break_selection]  # Extract days included for each break
+            log_data = [
+                            starting_points, 
+                            st.session_state.current_points, 
+                            start_date.strftime('%Y-%m-%d'), 
+                            end_date.strftime('%Y-%m-%d'), 
+                            datetime.now().strftime('%Y-%m-%d %H:%M:%S') 
+                        ] + break_data
+            log_to_google_sheets(log_data)
+
             st.write(f"Points used so far: {points_used}")
             st.write(f"Average points used per day: {points_per_day_used:.2f}")
             st.write(f"Allowed points to spend per day from now on: {points_per_day_from_now:.2f}")
