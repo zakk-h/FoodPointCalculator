@@ -54,7 +54,6 @@ terms = [
     {"name": "Summer 2026 - Session 2", "start": "2026-06-29", "end": "2026-08-10"}
 ]
 
-
 # Function to determine the current or next term based on hardcoded dates
 def get_term_dates():
     current_date = datetime.now()
@@ -179,3 +178,5 @@ else:
             st.write(f"Average points used per day: {points_per_day_used:.2f}")
             st.write(f"Allowed points to spend per day from now on: {points_per_day_from_now:.2f}")
             st.write(f"Food points remaining if current trajectory continues: {over_under:.2f}")
+
+            st.markdown('<small style="color:gray;">Note: Data entered is stored for cohort analysis purposes.</small>', unsafe_allow_html=True)
