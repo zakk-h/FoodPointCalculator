@@ -18,15 +18,25 @@ dining_plans = {
     "Custom": None
 }
 
-# Hardcoded term dates and breaks for 2024-2025
+# Hardcoded term dates and breaks for 2024-2026
 terms = [
+    # 2024-2025 Academic Year
     {"name": "Summer 2024 - Session 1", "start": "2024-05-15", "end": "2024-06-27"},
     {"name": "Summer 2024 - Session 2", "start": "2024-07-01", "end": "2024-08-11"},
     {"name": "Fall 2024", "start": "2024-08-26", "end": "2024-12-16", "breaks": [("Fall Break", "2024-10-11", "2024-10-15"), ("Thanksgiving", "2024-11-26", "2024-11-30")]},
     {"name": "Spring 2025", "start": "2025-01-08", "end": "2025-05-03", "breaks": [("Spring Break", "2025-03-07", "2025-03-16")]},
     {"name": "Summer 2025 - Session 1", "start": "2025-05-14", "end": "2025-06-26"},
-    {"name": "Summer 2025 - Session 2", "start": "2025-06-30", "end": "2025-08-11"}
+    {"name": "Summer 2025 - Session 2", "start": "2025-06-30", "end": "2025-08-11"},
+
+    # 2025-2026 Academic Year
+    {"name": "Summer 2025 - Session 1", "start": "2025-05-14", "end": "2025-06-26"},
+    {"name": "Summer 2025 - Session 2", "start": "2025-06-30", "end": "2025-08-11"},
+    {"name": "Fall 2025", "start": "2025-08-25", "end": "2025-12-15", "breaks": [("Fall Break", "2025-10-10", "2025-10-15"), ("Thanksgiving", "2025-11-25", "2025-11-30")]},
+    {"name": "Spring 2026", "start": "2026-01-07", "end": "2026-05-02", "breaks": [("Spring Break", "2026-03-06", "2026-03-16")]},
+    {"name": "Summer 2026 - Session 1", "start": "2026-05-13", "end": "2026-06-25"},
+    {"name": "Summer 2026 - Session 2", "start": "2026-06-29", "end": "2026-08-10"}
 ]
+
 
 # Function to determine the current or next term based on hardcoded dates
 def get_term_dates():
@@ -96,15 +106,27 @@ else:
         if 'current_points' not in st.session_state:
             st.session_state.current_points = starting_points
 
+        st.number_input("Current Food Points", min_value=0, key='current_points')
+
         # Break selection
         break_selection = []
+        total_days_in_term = (end_date - start_date).days
+        days_present = total_days_in_term  # Initially assume the user is present for all days
+        
         if breaks:
             st.markdown("#### Breaks")
             for break_name, break_start, break_end in breaks:
-                days_included = st.slider(f"How many days to include from {break_name}?", 0, (break_end - break_start).days + 1, (break_end - break_start).days + 1)
-                break_selection.append((break_name, break_start, break_end, days_included))
+                # Determine if the break has already happened
+                current_date = datetime.now().date()
+                if break_end.date() < current_date:
+                    verb = "were"
+                else:
+                    verb = "are"
 
-        st.number_input("Current Food Points", min_value=0, key='current_points')
+                days_included = st.slider(f"How many days {verb} you here during {break_name}?", 0, (break_end - break_start).days + 1, (break_end - break_start).days + 1)
+                break_selection.append((break_name, break_start, break_end, days_included))
+                break_duration = (break_end - break_start).days + 1
+                days_present -= (break_duration - days_included)
 
         # Calculate days remaining and adjusted days elapsed considering breaks
         days_remaining, adjusted_days_elapsed = calculate_days_remaining(end_date, start_date, break_selection, datetime.now().date())
@@ -117,9 +139,9 @@ else:
 
         # Display the results
         st.write(f"Days elapsed: {adjusted_days_elapsed}")
-        st.write(f"Total days in term: {(end_date - start_date).days}")
+        st.write(f"Total days in term: {total_days_in_term} (Days present: {days_present})")
         if adjusted_days_elapsed < 0: 
-            st.write(f"You are able to spend {starting_points / (end_date - start_date).days:.2f} food points per day once the term begins.")
+            st.write(f"You are able to spend {starting_points / days_present:.2f} food points per day once the term begins.")
             st.write(f"Additional statistics on food points and current trajectory will appear after the term begins on {start_date}.")
         else:
             st.write(f"Points used so far: {points_used}")
