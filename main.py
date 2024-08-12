@@ -75,7 +75,17 @@ def get_term_dates():
     def select_current_or_next_term(terms):
         current_date = datetime.now()
         
-        for start, end in terms:
+        sorted_terms = sorted(terms, key=lambda term: term[0])
+    
+        # Iterate through sorted terms to find the current term
+        for start, end in sorted_terms:
+            # Ensure start and end are datetime objects by converting if necessary
+            if isinstance(start, str):
+                start = datetime.strptime(start, '%B %d, %Y')
+            if isinstance(end, str):
+                end = datetime.strptime(end, '%B %d, %Y')
+
+            # Compare the current date with the term start and end dates
             if start <= current_date <= end:
                 return start, end
         
@@ -88,7 +98,7 @@ def get_term_dates():
 
     # Find all terms and select the current or next term
     terms = find_terms()
-    term_start_date, term_end_date = select_current_or_next_term(terms)
+    term_start_date, term_end_date = select_current_or_next_term(sorted(terms, key=lambda term: term[0]))
     
     if term_start_date is None or term_end_date is None:
         # If no term is found, initialize with a placeholder
