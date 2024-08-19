@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Define the scope of access
 scope = ["https://spreadsheets.google.com/feeds", 
@@ -179,4 +181,37 @@ else:
             st.write(f"Allowed points to spend per day from now on: {points_per_day_from_now:.2f}")
             st.write(f"Food points remaining if current trajectory continues: {over_under:.2f}")
 
-            st.markdown('<small style="color:gray;">Note: Data entered is stored for cohort analysis purposes.</small>', unsafe_allow_html=True)
+            # Plot the food points projection
+            dates_so_far = np.array([start_date + timedelta(days=i) for i in range(adjusted_days_elapsed + 1)])
+            dates_remaining = np.array([start_date + timedelta(days=adjusted_days_elapsed + i) for i in range(days_remaining + 1)])
+
+            # Points arrays based on the calculated slopes
+            points_so_far = starting_points - points_per_day_used * np.arange(adjusted_days_elapsed + 1)
+            points_projected = st.session_state.current_points - points_per_day_used * np.arange(days_remaining + 1)
+            points_required = st.session_state.current_points - points_per_day_from_now * np.arange(days_remaining + 1)
+
+            # Plotting
+            plt.figure(figsize=(10, 6))
+
+            # Plot the actual points spent so far
+            plt.plot(dates_so_far, points_so_far, label="Points Spent So Far", color='blue')
+
+            # Plot the projected spending if current rate continues
+            plt.plot(dates_remaining, points_projected, label="Current Spending Projection", linestyle='--', color='blue')
+
+            # Plot the optimal spending to finish at zero points
+            plt.plot(dates_remaining, points_required, label="Average Spending to Finish at 0", color='red')
+
+            # Add labels and legend
+            plt.xlabel("Date")
+            plt.ylabel("Food Points")
+            plt.title("Food Points Spending Projection")
+            plt.legend()
+
+            # Display plot in Streamlit
+            st.pyplot(plt)
+
+            st.markdown('<p style="font-size: 9px; color: gray;">Note: Data entered is stored for cohort analysis purposes.</p>', unsafe_allow_html=True)
+
+
+    
