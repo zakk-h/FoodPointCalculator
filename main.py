@@ -19,7 +19,7 @@ client = gspread.authorize(creds)
 
 # Open the Google Sheet by its URL
 spreadsheet_url = "https://docs.google.com/spreadsheets/d/16uDILn_5phMRGMWVqTd6fnNf2q6XsZrnE7xQSZjnalY/edit?usp=sharing"
-sheet = client.open_by_url(spreadsheet_url).sheet1
+sheet = client.open_by_url(spreadsheet_url).worksheet("Data")
 
 # Define the dining plans
 dining_plans = {
