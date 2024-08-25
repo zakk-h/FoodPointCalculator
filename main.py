@@ -124,7 +124,7 @@ st.markdown(f"### {term_name}")
 if term_start_date is None or term_end_date is None:
     st.error("Could not determine the current term dates.")
 else:
-    start_date = st.date_input("Start Date", term_start_date)
+    start_date = st.date_input("Start Date", term_start_date-timedelta(days=2)) # People traditionally move in on Saturday
     end_date = st.date_input("End Date", term_end_date)
 
     if end_date < start_date:
