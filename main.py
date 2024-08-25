@@ -37,6 +37,15 @@ dining_plans = {
     "Custom": None
 }
 
+# Duke seems to be giving an additional 7.5% in food points for the Fall 2024 semester.
+INFLATE = True
+
+# Apply inflation if INFLATE is True
+if INFLATE:
+    for key in dining_plans:
+        if dining_plans[key] is not None:
+            dining_plans[key] = round(dining_plans[key] * 1.075)
+
 # Hardcoded term dates and breaks for 2024-2026
 terms = [
     # 2024-2025 Academic Year
