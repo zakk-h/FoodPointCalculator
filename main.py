@@ -199,26 +199,38 @@ else:
             points_projected = st.session_state.current_points - points_per_day_used * np.arange(days_remaining + 1)
             points_required = st.session_state.current_points - points_per_day_from_now * np.arange(days_remaining + 1)
 
+            # Multi-line comments are intepreted as strings in Streamlit and displayed in the app
             # Plotting
-            plt.figure(figsize=(10, 6))
+            #plt.figure(figsize=(10, 6))
 
             # Plot the actual points spent so far
-            plt.plot(dates_so_far, points_so_far, label="Points Spent So Far", color='blue')
+            #plt.plot(dates_so_far, points_so_far, label="Points Spent So Far", color='blue')
 
             # Plot the projected spending if current rate continues
-            plt.plot(dates_remaining, points_projected, label="Current Spending Projection", linestyle='--', color='blue')
+            #plt.plot(dates_remaining, points_projected, label="Current Spending Projection", linestyle='--', color='blue')
 
             # Plot the optimal spending to finish at zero points
-            plt.plot(dates_remaining, points_required, label="Average Spending to Finish at 0", color='red')
+            #plt.plot(dates_remaining, points_required, label="Average Spending to Finish at 0", color='red')
 
             # Add labels and legend
-            plt.xlabel("Date")
-            plt.ylabel("Food Points")
-            plt.title("Food Points Spending Projection")
-            plt.legend()
+            #plt.xlabel("Date")
+            #plt.ylabel("Food Points")
+            #plt.title("Food Points Spending Projection")
+            #plt.legend()
 
             # Display plot in Streamlit
-            st.pyplot(plt)
+            #st.pyplot(plt)
+            
+            # Combine all data into a DataFrame
+            df_so_far = pd.DataFrame({'Date': dates_so_far, 'Points': points_so_far, 'Type': 'Points Spent So Far'})
+            df_projected = pd.DataFrame({'Date': dates_remaining, 'Points': points_projected, 'Type': 'Current Spending Projection'})
+            df_required = pd.DataFrame({'Date': dates_remaining, 'Points': points_required, 'Type': 'Average Spending to Finish at 0'})
+
+            # Concatenate dataframes
+            df_all = pd.concat([df_so_far, df_projected, df_required])
+
+            # Plot using Streamlit's built-in chart functionality
+            st.line_chart(df_all.pivot(index='Date', columns='Type', values='Points'))
 
             st.markdown('<p style="font-size: 9px; color: gray;">Note: Data entered is stored for cohort analysis purposes.</p>', unsafe_allow_html=True)
 
