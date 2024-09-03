@@ -153,7 +153,12 @@ else:
                 else:
                     verb = "are"
 
-                days_included = st.slider(f"How many days {verb} you here during {break_name}?", 0, (break_end - break_start).days + 1, (break_end - break_start).days + 1)
+                days_included = st.slider(
+                            f"How many days were you here during {break_name}?", 
+                            0, 
+                            (break_end - break_start).days + 1, 
+                            0  # Default value set to 0
+                )
                 break_selection.append((break_name, break_start, break_end, days_included))
                 break_duration = (break_end - break_start).days + 1
                 days_present -= (break_duration - days_included)
