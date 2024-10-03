@@ -118,11 +118,20 @@ def log_to_google_sheets(data):
     # Append the data to the spreadsheet
     sheet.append_row(data)
 
-def get_or_create_bandit_sheet(client, spreadsheet_url):
+#def get_or_create_bandit_sheet(client, spreadsheet_url):
+#    try:
+#        return client.open_by_url(spreadsheet_url).worksheet("Bandit")
+#    except gspread.exceptions.WorksheetNotFound:
+#        bandit_sheet = client.open_by_url(spreadsheet_url).add_worksheet(title="Bandit", rows="1000", cols="20")
+#        bandit_sheet.append_row(["Username", "Day", "Hour", "Action", "Reward"])
+#        return bandit_sheet
+def get_or_create_bandit_sheet(client, spreadsheet_url, username):
+    sheet_name = f"Bandits_{username.lower()}"
     try:
-        return client.open_by_url(spreadsheet_url).worksheet("Bandit_Test")
+        return client.open_by_url(spreadsheet_url).worksheet(sheet_name)
     except gspread.exceptions.WorksheetNotFound:
-        bandit_sheet = client.open_by_url(spreadsheet_url).add_worksheet(title="Bandit", rows="1000", cols="20")
+        # Create the user's own bandit sheet if not found
+        bandit_sheet = client.open_by_url(spreadsheet_url).add_worksheet(title=sheet_name, rows="1000", cols="20")
         bandit_sheet.append_row(["Username", "Day", "Hour", "Action", "Reward"])
         return bandit_sheet
 
@@ -134,22 +143,21 @@ def food_suggestion():
     st.title("Food Suggestion")
     username = st.text_input("Enter your username")
 
-    # Initialize session state variables
-    if 'suggested_action' not in st.session_state:
-        st.session_state.suggested_action = None
+    if 'suggested_category' not in st.session_state:
+        st.session_state.suggested_category = None
+    if 'suggested_item' not in st.session_state:
+        st.session_state.suggested_item = None
     if 'rating_submitted' not in st.session_state:
         st.session_state.rating_submitted = False
 
     if username:
         try:
-            bandit_sheet = get_or_create_bandit_sheet(client, spreadsheet_url)
+            bandit_sheet = get_or_create_bandit_sheet(client, spreadsheet_url, username)
             data = bandit_sheet.get_all_values()
-            headers = data[0]  # Assuming first row is the header
-            data_rows = data[1:]  # Data excluding the header
+            headers = data[0]
+            data_rows = data[1:]
             df = pd.DataFrame(data_rows, columns=headers)
 
-            # Normalize username for case-insensitive matching
-            df = df[df['Username'].str.lower() == username.lower()]
             if df.empty:
                 user_data = pd.DataFrame(columns=['Username', 'Day', 'Hour', 'Action', 'Reward'])
             else:
@@ -158,95 +166,20 @@ def food_suggestion():
                 df['Reward'] = df['Reward'].astype(float)
                 user_data = df
 
-            actions = [
-                "Chicken Parmesan Panini",
-                "Chicken Pesto Panini",
-                "French Beef Panini",
-                "Fried Chicken Pimiento Cheese Panini",
-                "Grilled Ratatouille Panini",
-                "The Toscana",
-                "Greek Salad",
-            ]
-            '''
-            actions = [
-                "Chicken Parmesan Panini",
-                "Chicken Pesto Panini",
-                "French Beef Panini",
-                "Fried Chicken Pimiento Cheese Panini",
-                "Grilled Ratatouille Panini",
-                "The Toscana",
-                "Greek Salad",
-                "Salmon Bowl",
-                "Salmon Garden Salad",
-                "Southwest Chicken Bowl",
-                "Vegan Buddah Bowl",
-                "Classic Lasagna",
-                "Gourmet Mac N Cheese",
-                "Tomato Basil Bisque",
-                "Apple Moroccan Couscous",
-                "Chicken Salad Snack Box",
-                "Farm Fresh Eggs",
-                "Feta Cilantro Bowtie Salad",
-                "Fruit Cup",
-                "Garbanzo Greek Salad",
-                "Hummus and Pita Crisp",
-                "Hummus and Pita Cup",
-                "Mediterranean Snack Box",
-                "Penne Pesto Salad",
-                "Pita Crisps",
-                "Strawberry Fruit Cup",
-                "Turkey Snack Box",
-                "Buffalo Chicken Pita",
-                "Chicken Arugula Sandwich",
-                "Chicken Salad Brioche",
-                "Chicken Salad Croissant",
-                "Chicken Shawarma",
-                "Falafel on Pita",
-                "Hummus Veggie Wrap",
-                "Southwest Chicken Wrap",
-                "Southwest Turkey Wrap",
-                "Apple and Brie Crepe",
-                "Chicken Pesto Crepe",
-                "Croque Monsieur Crepe",
-                "Florentine Crepe",
-                "Banana",
-                "Homemade Whipped Cream",
-                "Strawberry",
-                "Black and White Cookie",
-                "Cheesecake Brownie",
-                "Chocolate Chip Cookie",
-                "Death by Chocolate Cake",
-                "Frosted Chocolate Cupcake",
-                "Frosted Cookies and Cream Cupcake",
-                "Frosted Strawberry Lemonade Cupcake",
-                "Frosted Vanilla Cupcake",
-                "Fudge Brownie",
-                "Lemon Bar",
-                "Lemon Pound Cake",
-                "Oatmeal Raisin Cookies",
-                "Pumpkin Sweet Bread",
-                "Shortdough Cookie",
-                "Strawberry Shortcake Cake",
-                "Tiramisu Cake",
-                "Cappucino Gelato",
-                "Chocolate Gelato",
-                "Dulce de Leche Gelato",
-                "Lemon Sorbet",
-                "Mango Sorbet",
-                "Mint Chocolate Chip Gelato",
-                "Mixed Berry Sorbet",
-                "Pomegranate Orange Blossom Gelato",
-                "Salted Caramel Gelato",
-                "Vanilla Gelato"
-            ]
-            '''
+            # Define categories and their respective items
+            categories = {
+                "Pizza": ["Pepperoni Pizza", "Margherita Pizza", "BBQ Chicken Pizza"],
+                "Salad": ["Greek Salad", "Caesar Salad"],
+                "Dessert": ["Cheesecake", "Brownie"]
+            }
 
+            category_actions = list(categories.keys())  # Categories for first-level bandit
             now = datetime.now()
             day_of_week = now.weekday()
             hour_of_day = now.hour
 
-            # Initialize the bandit model
-            mab = initialize_bandit(actions)
+            # Initialize category-level bandit
+            category_mab = initialize_bandit(category_actions)
 
             # Extract historical actions, rewards, and contexts
             if not user_data.empty:
@@ -258,55 +191,67 @@ def food_suggestion():
                 rewards = []
                 contexts = []
 
-            # Generate a new suggestion only if one hasn't been made or has been reset
-            if st.session_state.suggested_action is None:
+            if st.session_state.suggested_category is None:
                 if len(actions_taken) >= 10:
-                    mab.fit(actions_taken, rewards, contexts)
+                    category_mab.fit(actions_taken, rewards, contexts)
                     current_context = [[day_of_week, hour_of_day]]
-                    suggested_action = mab.predict(current_context)
+                    suggested_category = category_mab.predict(current_context)
                 else:
-                    st.warning(f"Insufficient data to train the model. (only {len(actions_taken)} actions so far). Providing a random suggestion.")
-                    suggested_action = np.random.choice(actions)
+                    st.warning(f"Insufficient data to train the model for category. (only {len(actions_taken)} actions so far). Providing a random category.")
+                    suggested_category = np.random.choice(category_actions)
 
-                st.session_state.suggested_action = suggested_action
+                st.session_state.suggested_category = suggested_category
                 st.session_state.rating_submitted = False  # Reset submission flag for new suggestion
 
-            suggested_action = st.session_state.suggested_action
+            suggested_category = st.session_state.suggested_category
+            st.write(f"**Suggested category for you:** {suggested_category}")
 
-            st.write(f"**Suggested food for you:** {suggested_action}")
+            # Initialize item-level bandit within the suggested category
+            item_actions = categories[suggested_category]
+            item_mab = initialize_bandit(item_actions)
 
+            if st.session_state.suggested_item is None:
+                if len(actions_taken) >= 10:
+                    item_mab.fit(actions_taken, rewards, contexts)
+                    current_context = [[day_of_week, hour_of_day]]
+                    suggested_item = item_mab.predict(current_context)
+                else:
+                    st.warning(f"Insufficient data to train the model for item. Providing a random item within {suggested_category}.")
+                    suggested_item = np.random.choice(item_actions)
+
+                st.session_state.suggested_item = suggested_item
+
+            suggested_item = st.session_state.suggested_item
+            st.write(f"**Suggested food item for you:** {suggested_item}")
+
+            # Form to submit rating
             with st.form(key='rating_form'):
-                rating = st.slider("How would you rate this suggestion?", 1, 5, 3)
+                rating = st.slider(f"How would you rate {suggested_item}?", 1, 5, 3)
                 submit_button = st.form_submit_button(label='Submit Rating')
 
             if submit_button and not st.session_state.rating_submitted:
-                # Append the new rating to the Google Sheet
-                new_row = [username, str(day_of_week), str(hour_of_day), suggested_action, str(rating)]
+                new_row = [username, str(day_of_week), str(hour_of_day), suggested_item, str(rating)]
                 bandit_sheet.append_row(new_row)
-
                 st.success("Thank you for your feedback!")
-
-                # Update session state to reflect that rating has been submitted
                 st.session_state.rating_submitted = True
 
             elif st.session_state.rating_submitted:
                 st.info("You have already submitted a rating for this suggestion.")
 
-            # Provide a button to get a new suggestion after submission
             if st.session_state.rating_submitted:
                 if st.button("Get a New Suggestion"):
-                    st.session_state.suggested_action = None
+                    st.session_state.suggested_category = None
+                    st.session_state.suggested_item = None
                     st.session_state.rating_submitted = False
-                    st.rerun()  # Rerun the script to generate a new suggestion
+                    st.rerun()
 
         except gspread.exceptions.APIError as api_err:
             st.error(f"Google Sheets API error: {api_err}")
-        except ValueError as val_err:
-            st.error(f"Data processing error: {val_err}")
         except Exception as e:
             st.error(f"An unexpected error occurred: {e}")
     else:
         st.info("Please enter your username to get a food suggestion.")
+
 
 
 def food_point_calculator():
