@@ -9,7 +9,7 @@ import numpy as np
 from mabwiser.mab import MAB, LearningPolicy
 import ast
 #from mabwiser.linear import LinUCB
-
+import logging
 # Define the scope of access
 scope = ["https://spreadsheets.google.com/feeds", 
          "https://www.googleapis.com/auth/drive"]
@@ -118,98 +118,106 @@ def log_to_google_sheets(data):
     # Append the data to the spreadsheet
     sheet.append_row(data)
 
+def get_or_create_bandit_sheet(client, spreadsheet_url):
+    try:
+        return client.open_by_url(spreadsheet_url).worksheet("Bandit")
+    except gspread.exceptions.WorksheetNotFound:
+        bandit_sheet = client.open_by_url(spreadsheet_url).add_worksheet(title="Bandit", rows="1000", cols="20")
+        bandit_sheet.append_row(["Username", "Day", "Hour", "Action", "Reward"])
+        return bandit_sheet
+
+@st.cache_resource
+def initialize_bandit(actions):
+    return MAB(arms=actions, learning_policy=LearningPolicy.LinUCB(alpha=1.0), neighborhood_policy=None)
+
 def food_suggestion():
     st.title("Food Suggestion")
-
-    # Ask for username
     username = st.text_input("Enter your username")
 
     if username:
-        # Authenticate and access the 'Bandit' sheet
         try:
-            bandit_sheet = client.open_by_url(spreadsheet_url).worksheet("Bandit")
-        except gspread.exceptions.WorksheetNotFound:
-            # Create the 'Bandit' worksheet if it doesn't exist
-            bandit_sheet = client.open_by_url(spreadsheet_url).add_worksheet(title="Bandit", rows="1000", cols="20")
-            # Initialize the worksheet with headers
-            bandit_sheet.append_row(["Username", "Day", "Hour", "Action", "Reward"])
+            bandit_sheet = get_or_create_bandit_sheet(client, spreadsheet_url)
+            data = bandit_sheet.get_all_values()
+            headers = data[0]  # Assuming first row is the header
+            data_rows = data[1:]  # Data excluding the header
+            df = pd.DataFrame(data_rows, columns=headers)
 
-        # Fetch data for the user
-        data = bandit_sheet.get_all_records()
+            # Convert data types
+            df = df[df['Username'] == username]
+            if df.empty:
+                user_data = pd.DataFrame(columns=['Username', 'Day', 'Hour', 'Action', 'Reward'])
+            else:
+                df['Day'] = df['Day'].astype(int)
+                df['Hour'] = df['Hour'].astype(int)
+                df['Reward'] = df['Reward'].astype(float)
+                user_data = df
 
-        # Convert data to DataFrame
-        df = pd.DataFrame(data)
+            actions = ["Pizza", "Burger", "Salad", "Pasta", "Sushi", "Sandwich", "Tacos"]
 
-        # Filter data for the current user
-        user_data = df[df['Username'] == username]
+            now = datetime.now()
+            day_of_week = now.weekday()
+            hour_of_day = now.hour
 
-        # Define the available actions (food options)
-        actions = ["Pizza", "Burger", "Salad", "Pasta", "Sushi", "Sandwich", "Tacos"]
+            # Initialize the bandit model
+            mab = initialize_bandit(actions)
 
-        # Get current context
-        now = datetime.now()
-        day_of_week = now.weekday()  # 0 = Monday, 6 = Sunday
-        hour_of_day = now.hour
+            # Initialize variables
+            actions_taken = []
+            rewards = []
+            contexts = []
 
-        #context = [day_of_week, hour_of_day]
-        context_df = pd.DataFrame({'Day': [day_of_week], 'Hour': [hour_of_day]})
-        contexts_df = user_data[['Day', 'Hour']]
+            if not user_data.empty:
+                actions_taken = user_data['Action'].tolist()
+                rewards = user_data['Reward'].tolist()
+                contexts = user_data[['Day', 'Hour']].values.tolist()
 
-        # Prepare data for the bandit algorithm
-        if not user_data.empty:
-            # Use the separate 'Day' and 'Hour' columns to create contexts
-            #contexts = user_data[['Day', 'Hour']].values.tolist()
-            actions_taken = user_data['Action']#.tolist()
-            rewards = user_data['Reward']#.tolist()
+            # Check if we have enough data to train the model
+            if len(actions_taken) >= 1:
+                mab.fit(actions_taken, rewards, contexts)
+                current_context = [[day_of_week, hour_of_day]]
+                suggested_action = mab.predict(current_context)[0]
+            else:
+                st.warning("Insufficient data to train the model. Providing a random suggestion.")
+                suggested_action = np.random.choice(actions)
 
-            # Initialize the bandit
-            mab = MAB(arms=actions, learning_policy=LearningPolicy.LinUCB(alpha=1.0), neighborhood_policy=None)
+            st.write(f"Suggested food for you: **{suggested_action}**")
+            rating = st.slider("How would you rate this suggestion?", 1, 5, 3)
 
-            # Fit the model with past data
-            mab.fit(contexts_df, actions_taken, rewards)
+            if st.button("Submit Rating"):
+                new_row = [username, str(day_of_week), str(hour_of_day), suggested_action, str(rating)]
+                bandit_sheet.append_row(new_row)
 
-            # Predict the best action for the current context
-            suggested_action = mab.predict(context_df)[0]
-        else:
-            # If no past data, select a random action
-            suggested_action = np.random.choice(actions)
-            mab = MAB(arms=actions, learning_policy=LearningPolicy.LinUCB(alpha=1.0), neighborhood_policy=None)
+                st.success("Thank you for your feedback!")
 
-        st.write(f"Suggested food for you: **{suggested_action}**")
+                # Re-fetch the data after appending the new row
+                data = bandit_sheet.get_all_values()
+                headers = data[0]
+                data_rows = data[1:]
+                df = pd.DataFrame(data_rows, columns=headers)
 
-        # Ask for user feedback
-        rating = st.slider("How would you rate this suggestion?", 1, 5, 3)
+                # Convert data types
+                df = df[df['Username'] == username]
+                df['Day'] = df['Day'].astype(int)
+                df['Hour'] = df['Hour'].astype(int)
+                df['Reward'] = df['Reward'].astype(float)
+                user_data = df
 
-        if st.button("Submit Rating"):
-            new_row = [username, day_of_week, hour_of_day, suggested_action, rating]
-            bandit_sheet.append_row(new_row)
-            contexts_df = pd.concat([user_data[['Day', 'Hour']], pd.DataFrame([[day_of_week, hour_of_day]], columns=['Day', 'Hour'])], ignore_index=True)
+                # Update actions_taken, rewards, contexts
+                actions_taken = user_data['Action'].tolist()
+                rewards = user_data['Reward'].tolist()
+                contexts = user_data[['Day', 'Hour']].values.tolist()
 
-            st.success("Thank you for your feedback!")
+                # Re-fit the model with the updated data
+                if len(actions_taken) >= 1:
+                    mab.fit(actions_taken, rewards, contexts)
+                else:
+                    st.warning("Insufficient data to train the model after adding new data.")
 
-            # Update the model with the new data
-            #contexts = user_data[['Day', 'Hour']].values.tolist() + [context]
-            # Append the new data and convert back to pandas Series
-            #actions_taken = pd.Series(user_data['Action'].tolist() + [suggested_action])
-            #rewards = pd.Series(user_data['Reward'].tolist() + [rating])
-            actions_taken = user_data['Action'].tolist() + [suggested_action]  # This becomes a list of strings
-            rewards = user_data['Reward'].tolist() + [rating]  # This becomes a list of floats/ints
-            print(contexts_df)
-            print(actions_taken)
-            print(rewards)
-
-            print("Type of actions_taken:", type(actions_taken))
-            print("Contents of actions_taken:", actions_taken)
-            print("Types within actions_taken:", [type(action) for action in actions_taken])
-
-
-            contexts_df = pd.concat([user_data[['Day', 'Hour']], context_df], ignore_index=True)
-
-            # Re-fit the model
-            #mab.fit(contexts, actions_taken, rewards)
-            mab.fit(contexts_df, actions_taken, rewards)
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
     else:
         st.info("Please enter your username to get a food suggestion.")
+
 
 def food_point_calculator():
     # Get term dates
