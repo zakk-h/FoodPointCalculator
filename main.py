@@ -5,6 +5,10 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import matplotlib.pyplot as plt
 import numpy as np
+#from mabwiser.mab import MAB
+from mabwiser.mab import MAB, LearningPolicy
+import ast
+#from mabwiser.linear import LinUCB
 
 # Define the scope of access
 scope = ["https://spreadsheets.google.com/feeds", 
@@ -114,130 +118,230 @@ def log_to_google_sheets(data):
     # Append the data to the spreadsheet
     sheet.append_row(data)
 
-# Get term dates
-term_start_date, term_end_date, days_elapsed, term_name, breaks = get_term_dates()
+def food_suggestion():
+    st.title("Food Suggestion")
+
+    # Ask for username
+    username = st.text_input("Enter your username")
+
+    if username:
+        # Authenticate and access the 'Bandit' sheet
+        try:
+            bandit_sheet = client.open_by_url(spreadsheet_url).worksheet("Bandit")
+        except gspread.exceptions.WorksheetNotFound:
+            # Create the 'Bandit' worksheet if it doesn't exist
+            bandit_sheet = client.open_by_url(spreadsheet_url).add_worksheet(title="Bandit", rows="1000", cols="20")
+            # Initialize the worksheet with headers
+            bandit_sheet.append_row(["Username", "Day", "Hour", "Action", "Reward"])
+
+        # Fetch data for the user
+        data = bandit_sheet.get_all_records()
+
+        # Convert data to DataFrame
+        df = pd.DataFrame(data)
+
+        # Filter data for the current user
+        user_data = df[df['Username'] == username]
+
+        # Define the available actions (food options)
+        actions = ["Pizza", "Burger", "Salad", "Pasta", "Sushi", "Sandwich", "Tacos"]
+
+        # Get current context
+        now = datetime.now()
+        day_of_week = now.weekday()  # 0 = Monday, 6 = Sunday
+        hour_of_day = now.hour
+
+        #context = [day_of_week, hour_of_day]
+        context_df = pd.DataFrame({'Day': [day_of_week], 'Hour': [hour_of_day]})
+        contexts_df = user_data[['Day', 'Hour']]
+
+        # Prepare data for the bandit algorithm
+        if not user_data.empty:
+            # Use the separate 'Day' and 'Hour' columns to create contexts
+            #contexts = user_data[['Day', 'Hour']].values.tolist()
+            actions_taken = user_data['Action']#.tolist()
+            rewards = user_data['Reward']#.tolist()
+
+            # Initialize the bandit
+            mab = MAB(arms=actions, learning_policy=LearningPolicy.LinUCB(alpha=1.0), neighborhood_policy=None)
+
+            # Fit the model with past data
+            mab.fit(contexts_df, actions_taken, rewards)
+
+            # Predict the best action for the current context
+            suggested_action = mab.predict(context_df)[0]
+        else:
+            # If no past data, select a random action
+            suggested_action = np.random.choice(actions)
+            mab = MAB(arms=actions, learning_policy=LearningPolicy.LinUCB(alpha=1.0), neighborhood_policy=None)
+
+        st.write(f"Suggested food for you: **{suggested_action}**")
+
+        # Ask for user feedback
+        rating = st.slider("How would you rate this suggestion?", 1, 5, 3)
+
+        if st.button("Submit Rating"):
+            new_row = [username, day_of_week, hour_of_day, suggested_action, rating]
+            bandit_sheet.append_row(new_row)
+            contexts_df = pd.concat([user_data[['Day', 'Hour']], pd.DataFrame([[day_of_week, hour_of_day]], columns=['Day', 'Hour'])], ignore_index=True)
+
+            st.success("Thank you for your feedback!")
+
+            # Update the model with the new data
+            #contexts = user_data[['Day', 'Hour']].values.tolist() + [context]
+            # Append the new data and convert back to pandas Series
+            #actions_taken = pd.Series(user_data['Action'].tolist() + [suggested_action])
+            #rewards = pd.Series(user_data['Reward'].tolist() + [rating])
+            actions_taken = user_data['Action'].tolist() + [suggested_action]  # This becomes a list of strings
+            rewards = user_data['Reward'].tolist() + [rating]  # This becomes a list of floats/ints
+            print(contexts_df)
+            print(actions_taken)
+            print(rewards)
+
+            print("Type of actions_taken:", type(actions_taken))
+            print("Contents of actions_taken:", actions_taken)
+            print("Types within actions_taken:", [type(action) for action in actions_taken])
+
+
+            contexts_df = pd.concat([user_data[['Day', 'Hour']], context_df], ignore_index=True)
+
+            # Re-fit the model
+            #mab.fit(contexts, actions_taken, rewards)
+            mab.fit(contexts_df, actions_taken, rewards)
+    else:
+        st.info("Please enter your username to get a food suggestion.")
+
+def food_point_calculator():
+    # Get term dates
+    term_start_date, term_end_date, days_elapsed, term_name, breaks = get_term_dates()
+
+    # Streamlit UI
+    st.title("Food Point Calculator")
+    st.markdown(f"### {term_name}")
+
+    if term_start_date is None or term_end_date is None:
+        st.error("Could not determine the current term dates.")
+    else:
+        start_date = st.date_input("Start Date", term_start_date-timedelta(days=2)) # People traditionally move in on Saturday
+        end_date = st.date_input("End Date", term_end_date)
+
+        if end_date < start_date:
+            st.error("End date cannot be before start date.")
+        else:
+            plan_selected = st.selectbox("Select a Dining Plan", list(dining_plans.keys()))
+            starting_points = st.number_input("Starting Food Points", value=dining_plans[plan_selected] if dining_plans[plan_selected] is not None else 0, min_value=0)
+
+            if 'current_points' not in st.session_state:
+                st.session_state.current_points = starting_points
+
+            st.number_input("Current Food Points", min_value=0, key='current_points')
+
+            # Break selection
+            break_selection = []
+            total_days_in_term = (end_date - start_date).days
+            days_present = total_days_in_term  # Initially assume the user is present for all days
+            
+            if breaks:
+                st.markdown("#### Breaks")
+                for break_name, break_start, break_end in breaks:
+                    # Determine if the break has already happened
+                    current_date = datetime.now().date()
+                    if break_end.date() < current_date:
+                        verb = "were"
+                    else:
+                        verb = "are"
+
+                    days_included = st.slider(
+                                f"How many days were you here during {break_name}?", 
+                                0, 
+                                (break_end - break_start).days + 1, 
+                                0  # Default value set to 0
+                    )
+                    break_selection.append((break_name, break_start, break_end, days_included))
+                    break_duration = (break_end - break_start).days + 1
+                    days_present -= (break_duration - days_included)
+
+            # Calculate days remaining and adjusted days elapsed considering breaks
+            days_remaining, adjusted_days_elapsed = calculate_days_remaining(end_date, start_date, break_selection, datetime.now().date())
+
+            # Calculate points used and needed per day
+            points_used = starting_points - st.session_state.current_points
+            points_per_day_used = points_used / adjusted_days_elapsed if adjusted_days_elapsed > 0 else 0
+            points_per_day_from_now = st.session_state.current_points / days_remaining if days_remaining > 0 else 0
+            over_under = st.session_state.current_points - days_remaining * points_per_day_used
+
+            # Display the results
+            st.write(f"Days elapsed: {adjusted_days_elapsed}")
+            st.write(f"Total days in term: {total_days_in_term} (Days present: {days_present})")
+            if adjusted_days_elapsed < 0: 
+                st.write(f"You are able to spend {starting_points / days_present:.2f} food points per day once the term begins.")
+                st.write(f"Additional statistics on food points and current trajectory will appear after the term begins on {start_date}.")
+            else:
+                # Log data to Google Sheets
+                break_data = [days_included for _, _, _, days_included in break_selection]  # Extract days included for each break
+                log_data = [
+                                starting_points, 
+                                st.session_state.current_points, 
+                                start_date.strftime('%Y-%m-%d'), 
+                                end_date.strftime('%Y-%m-%d'), 
+                                datetime.now().strftime('%Y-%m-%d %H:%M:%S') 
+                            ] + break_data
+                log_to_google_sheets(log_data)
+
+                st.write(f"Points used so far: {points_used}")
+                st.write(f"Average points used per day: {points_per_day_used:.2f}")
+                st.write(f"Allowed points to spend per day from now on: {points_per_day_from_now:.2f}")
+                st.write(f"Food points remaining if current trajectory continues: {over_under:.2f}")
+
+                # Plot the food points projection
+                dates_so_far = np.array([start_date + timedelta(days=i) for i in range(adjusted_days_elapsed + 1)])
+                dates_remaining = np.array([start_date + timedelta(days=adjusted_days_elapsed + i) for i in range(days_remaining + 1)])
+
+                # Points arrays based on the calculated slopes
+                points_so_far = starting_points - points_per_day_used * np.arange(adjusted_days_elapsed + 1)
+                points_projected = st.session_state.current_points - points_per_day_used * np.arange(days_remaining + 1)
+                points_required = st.session_state.current_points - points_per_day_from_now * np.arange(days_remaining + 1)
+
+                # Multi-line comments are intepreted as strings in Streamlit and displayed in the app
+                # Plotting
+                #plt.figure(figsize=(10, 6))
+
+                # Plot the actual points spent so far
+                #plt.plot(dates_so_far, points_so_far, label="Points Spent So Far", color='blue')
+
+                # Plot the projected spending if current rate continues
+                #plt.plot(dates_remaining, points_projected, label="Current Spending Projection", linestyle='--', color='blue')
+
+                # Plot the optimal spending to finish at zero points
+                #plt.plot(dates_remaining, points_required, label="Average Spending to Finish at 0", color='red')
+
+                # Add labels and legend
+                #plt.xlabel("Date")
+                #plt.ylabel("Food Points")
+                #plt.title("Food Points Spending Projection")
+                #plt.legend()
+
+                # Display plot in Streamlit
+                #st.pyplot(plt)
+                
+                # Combine all data into a DataFrame
+                df_so_far = pd.DataFrame({'Date': dates_so_far, 'Points': points_so_far, 'Type': 'Points Spent So Far'})
+                df_projected = pd.DataFrame({'Date': dates_remaining, 'Points': points_projected, 'Type': 'Current Spending Projection'})
+                df_required = pd.DataFrame({'Date': dates_remaining, 'Points': points_required, 'Type': 'Average Spending to Finish at 0'})
+
+                # Concatenate dataframes
+                df_all = pd.concat([df_so_far, df_projected, df_required])
+
+                # Plot using Streamlit's built-in chart functionality
+                st.line_chart(df_all.pivot(index='Date', columns='Type', values='Points'))
+
+                st.markdown('<p style="font-size: 9px; color: gray;">Note: Data entered is stored for cohort analysis purposes.</p>', unsafe_allow_html=True)
+
 
 # Streamlit UI
-st.title("Food Point Calculator")
-st.markdown(f"### {term_name}")
-
-if term_start_date is None or term_end_date is None:
-    st.error("Could not determine the current term dates.")
-else:
-    start_date = st.date_input("Start Date", term_start_date-timedelta(days=2)) # People traditionally move in on Saturday
-    end_date = st.date_input("End Date", term_end_date)
-
-    if end_date < start_date:
-        st.error("End date cannot be before start date.")
-    else:
-        plan_selected = st.selectbox("Select a Dining Plan", list(dining_plans.keys()))
-        starting_points = st.number_input("Starting Food Points", value=dining_plans[plan_selected] if dining_plans[plan_selected] is not None else 0, min_value=0)
-
-        if 'current_points' not in st.session_state:
-            st.session_state.current_points = starting_points
-
-        st.number_input("Current Food Points", min_value=0, key='current_points')
-
-        # Break selection
-        break_selection = []
-        total_days_in_term = (end_date - start_date).days
-        days_present = total_days_in_term  # Initially assume the user is present for all days
-        
-        if breaks:
-            st.markdown("#### Breaks")
-            for break_name, break_start, break_end in breaks:
-                # Determine if the break has already happened
-                current_date = datetime.now().date()
-                if break_end.date() < current_date:
-                    verb = "were"
-                else:
-                    verb = "are"
-
-                days_included = st.slider(
-                            f"How many days were you here during {break_name}?", 
-                            0, 
-                            (break_end - break_start).days + 1, 
-                            0  # Default value set to 0
-                )
-                break_selection.append((break_name, break_start, break_end, days_included))
-                break_duration = (break_end - break_start).days + 1
-                days_present -= (break_duration - days_included)
-
-        # Calculate days remaining and adjusted days elapsed considering breaks
-        days_remaining, adjusted_days_elapsed = calculate_days_remaining(end_date, start_date, break_selection, datetime.now().date())
-
-        # Calculate points used and needed per day
-        points_used = starting_points - st.session_state.current_points
-        points_per_day_used = points_used / adjusted_days_elapsed if adjusted_days_elapsed > 0 else 0
-        points_per_day_from_now = st.session_state.current_points / days_remaining if days_remaining > 0 else 0
-        over_under = st.session_state.current_points - days_remaining * points_per_day_used
-
-        # Display the results
-        st.write(f"Days elapsed: {adjusted_days_elapsed}")
-        st.write(f"Total days in term: {total_days_in_term} (Days present: {days_present})")
-        if adjusted_days_elapsed < 0: 
-            st.write(f"You are able to spend {starting_points / days_present:.2f} food points per day once the term begins.")
-            st.write(f"Additional statistics on food points and current trajectory will appear after the term begins on {start_date}.")
-        else:
-            # Log data to Google Sheets
-            break_data = [days_included for _, _, _, days_included in break_selection]  # Extract days included for each break
-            log_data = [
-                            starting_points, 
-                            st.session_state.current_points, 
-                            start_date.strftime('%Y-%m-%d'), 
-                            end_date.strftime('%Y-%m-%d'), 
-                            datetime.now().strftime('%Y-%m-%d %H:%M:%S') 
-                        ] + break_data
-            log_to_google_sheets(log_data)
-
-            st.write(f"Points used so far: {points_used}")
-            st.write(f"Average points used per day: {points_per_day_used:.2f}")
-            st.write(f"Allowed points to spend per day from now on: {points_per_day_from_now:.2f}")
-            st.write(f"Food points remaining if current trajectory continues: {over_under:.2f}")
-
-            # Plot the food points projection
-            dates_so_far = np.array([start_date + timedelta(days=i) for i in range(adjusted_days_elapsed + 1)])
-            dates_remaining = np.array([start_date + timedelta(days=adjusted_days_elapsed + i) for i in range(days_remaining + 1)])
-
-            # Points arrays based on the calculated slopes
-            points_so_far = starting_points - points_per_day_used * np.arange(adjusted_days_elapsed + 1)
-            points_projected = st.session_state.current_points - points_per_day_used * np.arange(days_remaining + 1)
-            points_required = st.session_state.current_points - points_per_day_from_now * np.arange(days_remaining + 1)
-
-            # Multi-line comments are intepreted as strings in Streamlit and displayed in the app
-            # Plotting
-            #plt.figure(figsize=(10, 6))
-
-            # Plot the actual points spent so far
-            #plt.plot(dates_so_far, points_so_far, label="Points Spent So Far", color='blue')
-
-            # Plot the projected spending if current rate continues
-            #plt.plot(dates_remaining, points_projected, label="Current Spending Projection", linestyle='--', color='blue')
-
-            # Plot the optimal spending to finish at zero points
-            #plt.plot(dates_remaining, points_required, label="Average Spending to Finish at 0", color='red')
-
-            # Add labels and legend
-            #plt.xlabel("Date")
-            #plt.ylabel("Food Points")
-            #plt.title("Food Points Spending Projection")
-            #plt.legend()
-
-            # Display plot in Streamlit
-            #st.pyplot(plt)
-            
-            # Combine all data into a DataFrame
-            df_so_far = pd.DataFrame({'Date': dates_so_far, 'Points': points_so_far, 'Type': 'Points Spent So Far'})
-            df_projected = pd.DataFrame({'Date': dates_remaining, 'Points': points_projected, 'Type': 'Current Spending Projection'})
-            df_required = pd.DataFrame({'Date': dates_remaining, 'Points': points_required, 'Type': 'Average Spending to Finish at 0'})
-
-            # Concatenate dataframes
-            df_all = pd.concat([df_so_far, df_projected, df_required])
-
-            # Plot using Streamlit's built-in chart functionality
-            st.line_chart(df_all.pivot(index='Date', columns='Type', values='Points'))
-
-            st.markdown('<p style="font-size: 9px; color: gray;">Note: Data entered is stored for cohort analysis purposes.</p>', unsafe_allow_html=True)
-
-
-    
+st.sidebar.title("Navigation")
+page = st.sidebar.selectbox("Go to", ["Food Point Calculator", "Food Suggestion"])
+if page == "Food Point Calculator":
+    food_point_calculator()
+elif page == "Food Suggestion":
+    food_suggestion()
