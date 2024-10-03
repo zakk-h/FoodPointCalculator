@@ -170,12 +170,14 @@ def food_suggestion():
                 actions_taken = user_data['Action'].tolist()
                 rewards = user_data['Reward'].tolist()
                 contexts = user_data[['Day', 'Hour']].values.tolist()
-
+                
+            print(user_data)
             # Check if we have enough data to train the model
             if len(actions_taken) >= 1:
                 mab.fit(actions_taken, rewards, contexts)
                 current_context = [[day_of_week, hour_of_day]]
-                suggested_action = mab.predict(current_context)[0]
+                suggested_action = mab.predict(current_context)
+                print("Model predicted ", suggested_action)
             else:
                 st.warning("Insufficient data to train the model. Providing a random suggestion.")
                 suggested_action = np.random.choice(actions)
