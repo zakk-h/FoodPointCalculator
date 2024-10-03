@@ -120,7 +120,7 @@ def log_to_google_sheets(data):
 
 def get_or_create_bandit_sheet(client, spreadsheet_url):
     try:
-        return client.open_by_url(spreadsheet_url).worksheet("Bandit")
+        return client.open_by_url(spreadsheet_url).worksheet("Bandit_Test")
     except gspread.exceptions.WorksheetNotFound:
         bandit_sheet = client.open_by_url(spreadsheet_url).add_worksheet(title="Bandit", rows="1000", cols="20")
         bandit_sheet.append_row(["Username", "Day", "Hour", "Action", "Reward"])
@@ -158,6 +158,16 @@ def food_suggestion():
                 df['Reward'] = df['Reward'].astype(float)
                 user_data = df
 
+            actions = [
+                "Chicken Parmesan Panini",
+                "Chicken Pesto Panini",
+                "French Beef Panini",
+                "Fried Chicken Pimiento Cheese Panini",
+                "Grilled Ratatouille Panini",
+                "The Toscana",
+                "Greek Salad",
+            ]
+            '''
             actions = [
                 "Chicken Parmesan Panini",
                 "Chicken Pesto Panini",
@@ -229,6 +239,7 @@ def food_suggestion():
                 "Salted Caramel Gelato",
                 "Vanilla Gelato"
             ]
+            '''
 
             now = datetime.now()
             day_of_week = now.weekday()
